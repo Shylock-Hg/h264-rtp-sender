@@ -297,7 +297,7 @@ int main(int argc, char *argv[])
 			while(t<=k)
 			{
 
-				if(!t)//发送一个需要分片的NALU的第一个分片，置FU HEADER的S位
+				if(!t)  //!< first packet
 				{
 					//printf("dddd1");
 					memset((char*)sendbuf,0,1500);
@@ -330,8 +330,7 @@ int main(int argc, char *argv[])
 					}
 					t++;
 				}
-				//发送一个需要分片的NALU的非第一个分片，清零FU HEADER的S位，如果该分片是该NALU的最后一个分片，置FU HEADER的E位
-				else if(k==t)//发送的是最后一个分片，注意最后一个分片的长度可能超过MAX_RTP_PKT_LENGTH字节（当l>1386时）。
+				else if(k==t)  //!< last packet
 				{
 					//printf("dddd3\n");
 					memset((char*)sendbuf,0,1500);
@@ -353,7 +352,7 @@ int main(int argc, char *argv[])
 
 					//status = session.SendPacket((void *)(char*)sendbuf,l+1);
 					//status = session.SendPacket((void *)(char*)sendbuf,l+1,96,true,3600);
-					rtp_session_send_with_ts(session,(uint8_t*)sendbuf,1+1,ts_current);
+					rtp_session_send_with_ts(session,(uint8_t*)sendbuf,l+1,ts_current);
 					//printf("3\n");
 					if (status < 0)
 					{
@@ -363,7 +362,7 @@ int main(int argc, char *argv[])
 					t++;
 					//	Sleep(100);
 				}
-				else if(t<k&&0!=t)
+				else if(t<k&&0!=t)  //!< inner packet
 				{
 					//printf("dddd2");
 					memset((char*)sendbuf,0,1500);
