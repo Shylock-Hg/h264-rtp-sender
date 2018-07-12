@@ -299,9 +299,10 @@ int main(int argc, char *argv[])
 			int k=0,l=0;
 			k=n->len/MAX_RTP_PKT_LENGTH; //!< k number packets
 			l=n->len%MAX_RTP_PKT_LENGTH;
-			int t=0;  //!< current index of rtp packet
+			//int t=0;  //!< current index of rtp packet
 			//ts_current=ts_current+timestamp_increse;
-			while(t<=k)
+			if(0 == l) k--;
+			for(int t = 0; t<=k; t++)
 			{
 
 				//printf("dddd1");
@@ -321,9 +322,11 @@ int main(int argc, char *argv[])
 
 				nalu_payload=&sendbuf[2];
 				if(t==k){  //!< last packet
+					//printf("Memcpy start [%d] lenght [%d]!\n", t*MAX_RTP_PKT_LENGTH+1, l-1);
+					//fflush(stdout);
 					memcpy(nalu_payload,
-							n->buf+t*MAX_RTP_PKT_LENGTH+1,
-							l-1);
+						n->buf+t*MAX_RTP_PKT_LENGTH+1,
+						0==l ? MAX_RTP_PKT_LENGTH :l-1);
 				}else{
 					memcpy(nalu_payload,
 							n->buf+t*MAX_RTP_PKT_LENGTH+1,
@@ -334,9 +337,9 @@ int main(int argc, char *argv[])
 				//status = session.SendPacket((void *)(char*)sendbuf,MAX_RTP_PKT_LENGTH+2,96,false,0);
 				if(t==k){  //!< last packet
 					status = rtp_session_send_with_ts(session,
-							(uint8_t*)sendbuf,
-							l+1,
-							ts_current);
+						(uint8_t*)sendbuf,
+						0==l ? MAX_RTP_PKT_LENGTH : l+1,
+						ts_current);
 				}else{
 					status = rtp_session_send_with_ts(session,
 							(uint8_t*)sendbuf,
@@ -348,7 +351,7 @@ int main(int argc, char *argv[])
 				{
 					exit(status);
 				}
-				t++;
+				//t++;
 
 			}
 		}

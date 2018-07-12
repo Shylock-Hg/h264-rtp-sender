@@ -1,4 +1,4 @@
-CFLAGS = -std=gnu99 -Wall -g 
+CFLAGS = -Wall -g 
 
 DIR_BUILD = ./build
 
