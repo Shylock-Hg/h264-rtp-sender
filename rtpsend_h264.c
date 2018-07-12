@@ -186,7 +186,7 @@ int main(int argc, char *argv[])
 
 	signal(SIGINT,stophandler);
 
-#if 0
+#if 0  //!< demo for sending g711
 
 	while( ((i=fread(buffer,1,160,infile))>0) && (runcond) )
 	{
@@ -267,21 +267,30 @@ int main(int argc, char *argv[])
 			//status = session.SendPacket((void *)(char*)sendbuf,n->len);
 			if(n->nal_unit_type==1 || n->nal_unit_type==5)
 			{
-				rtp_session_send_with_ts(session,(uint8_t*)sendbuf,n->len,ts_current);
+				status = rtp_session_send_with_ts(session,
+						(uint8_t*)sendbuf,
+						n->len,
+						ts_current);
 				//printf("0\n");
 				//status = session.SendPacket((void *)(char*)sendbuf,n->len,96,true,3600);
 			}
-			else
+			else  //!< don't sleep
 			{
-				rtp_session_send_with_ts(session,(uint8_t*)sendbuf,n->len,ts_current);
+				status = rtp_session_send_with_ts(session,
+						(uint8_t*)sendbuf,
+						n->len,
+						ts_current);
+				if (status < 0)
+				{
+					exit(status);
+				}
 				continue;
 				//printf("1\n");
 				//status = session.SendPacket((void *)(char*)sendbuf,n->len,96,true,0);
 			}
 			if (status < 0)
 			{
-				//std::cerr << RTPGetErrorString(status) << std::endl;
-				exit(-1);
+				exit(status);
 			}
 
 		}
@@ -295,98 +304,52 @@ int main(int argc, char *argv[])
 			while(t<=k)
 			{
 
-				if(!t)  //!< first packet
-				{
-					//printf("dddd1");
-					memset((char*)sendbuf,0,1500);
-					//session.SetDefaultMark(false);
-					fu_ind =(FU_INDICATOR*)&sendbuf[0]; 
-					fu_ind->F=n->forbidden_bit;
-					fu_ind->NRI=n->nal_reference_idc>>5;
-					fu_ind->TYPE=28;
+				//printf("dddd1");
+				memset((char*)sendbuf,0,1500);
+				//session.SetDefaultMark(false);
+				fu_ind =(FU_INDICATOR*)&sendbuf[0]; 
+				fu_ind->F=n->forbidden_bit;
+				fu_ind->NRI=n->nal_reference_idc>>5;
+				fu_ind->TYPE=28;
 
-					fu_hdr =(FU_HEADER*)&sendbuf[1];
-					fu_hdr->E=0;
-					fu_hdr->R=0;
-					fu_hdr->S=1;
-					fu_hdr->TYPE=n->nal_unit_type;
+				fu_hdr =(FU_HEADER*)&sendbuf[1];
+				fu_hdr->E = t==k ? 1 : 0;  //!< last packet
+				fu_hdr->R = 0;
+				fu_hdr->S = t==0 ? 1 : 0;  //!< start packet
+				fu_hdr->TYPE=n->nal_unit_type;
 
 
-					nalu_payload=&sendbuf[2];
-					memcpy(nalu_payload,n->buf+1,MAX_RTP_PKT_LENGTH);//去掉NALU头
-
-					//status = session.SendPacket((void *)(char*)sendbuf,MAX_RTP_PKT_LENGTH+2);
-					//status = session.SendPacket((void *)(char*)sendbuf,MAX_RTP_PKT_LENGTH+2,96,false,0);
-					rtp_session_send_with_ts(session,(uint8_t*)sendbuf,MAX_RTP_PKT_LENGTH+2,ts_current);
-					//printf("2\n");
-					if (status < 0)
-					{
-						//std::cerr << RTPGetErrorString(status) << std::endl;
-						exit(-1);
-					}
-					t++;
+				nalu_payload=&sendbuf[2];
+				if(t==k){  //!< last packet
+					memcpy(nalu_payload,
+							n->buf+t*MAX_RTP_PKT_LENGTH+1,
+							l-1);
+				}else{
+					memcpy(nalu_payload,
+							n->buf+t*MAX_RTP_PKT_LENGTH+1,
+							MAX_RTP_PKT_LENGTH);
 				}
-				else if(k==t)  //!< last packet
-				{
-					//printf("dddd3\n");
-					memset((char*)sendbuf,0,1500);
-					//session.SetDefaultMark(true);
-					fu_ind =(FU_INDICATOR*)&sendbuf[0]; 
-					fu_ind->F=n->forbidden_bit;
-					fu_ind->NRI=n->nal_reference_idc>>5;
-					fu_ind->TYPE=28;
 
-					fu_hdr =(FU_HEADER*)&sendbuf[1];
-					fu_hdr->R=0;
-					fu_hdr->S=0;
-					fu_hdr->TYPE=n->nal_unit_type;
-					fu_hdr->E=1;
-					
-					nalu_payload=&sendbuf[2];
-					memcpy(nalu_payload,n->buf+t*MAX_RTP_PKT_LENGTH+1,l-1);
-
-					//status = session.SendPacket((void *)(char*)sendbuf,l+1);
-					//status = session.SendPacket((void *)(char*)sendbuf,l+1,96,true,3600);
-					rtp_session_send_with_ts(session,(uint8_t*)sendbuf,l+1,ts_current);
-					//printf("3\n");
-					if (status < 0)
-					{
-						//std::cerr << RTPGetErrorString(status) << std::endl;
-						exit(-1);
-					}
-					t++;
-					//	Sleep(100);
+				//status = session.SendPacket((void *)(char*)sendbuf,MAX_RTP_PKT_LENGTH+2);
+				//status = session.SendPacket((void *)(char*)sendbuf,MAX_RTP_PKT_LENGTH+2,96,false,0);
+				if(t==k){  //!< last packet
+					status = rtp_session_send_with_ts(session,
+							(uint8_t*)sendbuf,
+							l+1,
+							ts_current);
+				}else{
+					status = rtp_session_send_with_ts(session,
+							(uint8_t*)sendbuf,
+							MAX_RTP_PKT_LENGTH+2,
+							ts_current);
 				}
-				else if(t<k&&0!=t)  //!< inner packet
+				//printf("2\n");
+				if (status < 0)
 				{
-					//printf("dddd2");
-					memset((char*)sendbuf,0,1500);
-					//session.SetDefaultMark(false);
-					fu_ind =(FU_INDICATOR*)&sendbuf[0]; 
-					fu_ind->F=n->forbidden_bit;
-					fu_ind->NRI=n->nal_reference_idc>>5;
-					fu_ind->TYPE=28;
-
-					fu_hdr =(FU_HEADER*)&sendbuf[1];
-					fu_hdr->R=0;
-					fu_hdr->S=0;
-					fu_hdr->E=0;
-					fu_hdr->TYPE=n->nal_unit_type;
-
-					nalu_payload=&sendbuf[2];
-					memcpy(nalu_payload,n->buf+t*MAX_RTP_PKT_LENGTH+1,MAX_RTP_PKT_LENGTH);
-
-					//status = session.SendPacket((void *)(char*)sendbuf,MAX_RTP_PKT_LENGTH+2);
-					//status = session.SendPacket((void *)(char*)sendbuf,MAX_RTP_PKT_LENGTH+2,96,false,0);
-					rtp_session_send_with_ts(session,(uint8_t*)sendbuf,MAX_RTP_PKT_LENGTH+2,ts_current);
-					//printf("4\n");
-					if (status < 0)
-					{
-						//std::cerr << RTPGetErrorString(status) << std::endl;
-						exit(-1);
-					}
-					t++;
+					exit(status);
 				}
+				t++;
+
 			}
 		}
 
@@ -429,7 +392,7 @@ int main(int argc, char *argv[])
 		}
 
 		ts_current=ts_current+timestamp_increse;
-	}
+	}  //!< while(feof(bits))
 
 	printf("over\n");
 
@@ -440,5 +403,5 @@ int main(int argc, char *argv[])
 	ortp_exit();
 
 	return 0;
-}
+}  //!< main
 
