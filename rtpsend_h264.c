@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <time.h>
+#include <assert.h>
 
 #ifndef _WIN32 
 #include <sys/types.h>
@@ -45,7 +46,6 @@ int  rtpSend(RtpSession *session, char  *buffer,  int  len)
      
     //printf("send len=%d\n",len);
  
-    //如果数据小于MAX_RTP_PKT_LENGTH字节，直接发送：单一NAL单元模式
     if(valid_len <= MAX_RTP_PKT_LENGTH)
     {
         sendBytes = rtp_session_send_with_ts(session,
@@ -56,7 +56,6 @@ int  rtpSend(RtpSession *session, char  *buffer,  int  len)
     }
     else if (valid_len > MAX_RTP_PKT_LENGTH)
     {
-        //切分为很多个包发送，每个包前要对头进行处理，如第一个包
         valid_len -= 1;
         int k=0,l=0;
         k=valid_len/MAX_RTP_PKT_LENGTH;
@@ -157,6 +156,7 @@ int main(int argc, char *argv[])
 	ortp_scheduler_init();
 	ortp_set_log_level_mask(ORTP_MESSAGE|ORTP_WARNING|ORTP_ERROR);
 	session=rtp_session_new(RTP_SESSION_SENDONLY);	
+	assert(session);
 	
 	rtp_session_set_scheduling_mode(session,1);
 	rtp_session_set_blocking_mode(session,1);
@@ -221,14 +221,18 @@ int main(int argc, char *argv[])
 #define ddd
 	//< open h264 file
 	FILE * bits = open_h264_file(argv[1]);
+	assert(bits);
 
-	NALU_t *n;
-	n = nalu_alloc(8000000);//为结构体nalu_t及其成员buf分配空间。返回值为指向nalu_t存储空间的指针
+	//< alloc memory for nalu
+	NALU_t * n = nalu_alloc(8000000);
+	assert(bits);
+	
 
 	bool start=false;
 	while(!feof(bits))
 	{
-		int size=get_next_nalu(bits, n);//每执行一次，文件的指针指向本次找到的NALU的末尾，下一个位置即为下个NALU的起始码0x000001
+		//< get current nalu and scroll file offset to next h264 startcode
+		int size=get_next_nalu(bits, n);
 		if(size<4)
 		{
 			printf("get nul error!\n");
@@ -244,23 +248,20 @@ int main(int argc, char *argv[])
 				start=true;
 			}
 		}
-		//将编码数据写入文件t
 		//fwrite(pNals[i].p_payload, 1, pNals[i].i_payload, pFile);
-		//发送编码文件
 #if 1
-		//	当一个NALU小于MAX_RTP_PKT_LENGTH字节的时候，采用一个单RTP包发送
+		//< one nalu one packet
 		if(n->len<=MAX_RTP_PKT_LENGTH)
 		{
 			//printf("ddd0\n");
 			//session.SetDefaultMark(false);
-			//设置NALU HEADER,并将这个HEADER填入(char*)sendbuf[12]
-			nalu_hdr =(NALU_HEADER*)&sendbuf[0]; //将(char*)sendbuf[12]的地址赋给nalu_hdr，之后对nalu_hdr的写入就将写入(char*)sendbuf中；
+			nalu_hdr =(NALU_HEADER*)&sendbuf[0]; 
 			nalu_hdr->F=n->forbidden_bit;
-			nalu_hdr->NRI=n->nal_reference_idc>>5;//有效数据在n->nal_reference_idc的第6，7位，需要右移5位才能将其值赋给nalu_hdr->NRI。
+			nalu_hdr->NRI=n->nal_reference_idc>>5;
 			nalu_hdr->TYPE=n->nal_unit_type;
 
-			nalu_payload=&sendbuf[1];//同理将(char*)sendbuf[13]赋给nalu_payload
-			memcpy(nalu_payload,n->buf+1,n->len-1);//去掉nalu头的nalu剩余内容写入(char*)sendbuf[13]开始的字符串。
+			nalu_payload=&sendbuf[1];
+			memcpy(nalu_payload,n->buf+1,n->len-1);
 			//ts_current=ts_current+timestamp_increse;
 
 			//status = session.SendPacket((void *)(char*)sendbuf,n->len);
@@ -276,9 +277,7 @@ int main(int argc, char *argv[])
 				continue;
 				//printf("1\n");
 				//status = session.SendPacket((void *)(char*)sendbuf,n->len,96,true,0);
-					 //如果是6,7类型的包，不应该延时；之前有停顿，原因这在这
 			}
-			//发送RTP格式数据包并指定负载类型为96
 			if (status < 0)
 			{
 				//std::cerr << RTPGetErrorString(status) << std::endl;
@@ -286,13 +285,12 @@ int main(int argc, char *argv[])
 			}
 
 		}
-		else if(n->len>MAX_RTP_PKT_LENGTH)
+		else if(n->len>MAX_RTP_PKT_LENGTH)  //!< one nalu multi-packet
 		{
-			//得到该nalu需要用多少长度为MAX_RTP_PKT_LENGTH字节的RTP包来发送
 			int k=0,l=0;
-			k=n->len/MAX_RTP_PKT_LENGTH;//需要k个MAX_RTP_PKT_LENGTH字节的RTP包
-			l=n->len%MAX_RTP_PKT_LENGTH;//最后一个RTP包的需要装载的字节数
-			int t=0;//用于指示当前发送的是第几个分片RTP包
+			k=n->len/MAX_RTP_PKT_LENGTH; //!< k number packets
+			l=n->len%MAX_RTP_PKT_LENGTH;
+			int t=0;  //!< current index of rtp packet
 			//ts_current=ts_current+timestamp_increse;
 			while(t<=k)
 			{
@@ -302,13 +300,11 @@ int main(int argc, char *argv[])
 					//printf("dddd1");
 					memset((char*)sendbuf,0,1500);
 					//session.SetDefaultMark(false);
-					//设置FU INDICATOR,并将这个HEADER填入(char*)sendbuf[12]
-					fu_ind =(FU_INDICATOR*)&sendbuf[0]; //将(char*)sendbuf[12]的地址赋给fu_ind，之后对fu_ind的写入就将写入(char*)sendbuf中；
+					fu_ind =(FU_INDICATOR*)&sendbuf[0]; 
 					fu_ind->F=n->forbidden_bit;
 					fu_ind->NRI=n->nal_reference_idc>>5;
 					fu_ind->TYPE=28;
 
-					//设置FU HEADER,并将这个HEADER填入(char*)sendbuf[13]
 					fu_hdr =(FU_HEADER*)&sendbuf[1];
 					fu_hdr->E=0;
 					fu_hdr->R=0;
@@ -316,7 +312,7 @@ int main(int argc, char *argv[])
 					fu_hdr->TYPE=n->nal_unit_type;
 
 
-					nalu_payload=&sendbuf[2];//同理将(char*)sendbuf[14]赋给nalu_payload
+					nalu_payload=&sendbuf[2];
 					memcpy(nalu_payload,n->buf+1,MAX_RTP_PKT_LENGTH);//去掉NALU头
 
 					//status = session.SendPacket((void *)(char*)sendbuf,MAX_RTP_PKT_LENGTH+2);
@@ -335,20 +331,19 @@ int main(int argc, char *argv[])
 					//printf("dddd3\n");
 					memset((char*)sendbuf,0,1500);
 					//session.SetDefaultMark(true);
-					//设置FU INDICATOR,并将这个HEADER填入(char*)sendbuf[12]
-					fu_ind =(FU_INDICATOR*)&sendbuf[0]; //将(char*)sendbuf[12]的地址赋给fu_ind，之后对fu_ind的写入就将写入(char*)sendbuf中；
+					fu_ind =(FU_INDICATOR*)&sendbuf[0]; 
 					fu_ind->F=n->forbidden_bit;
 					fu_ind->NRI=n->nal_reference_idc>>5;
 					fu_ind->TYPE=28;
 
-					//设置FU HEADER,并将这个HEADER填入(char*)sendbuf[13]
 					fu_hdr =(FU_HEADER*)&sendbuf[1];
 					fu_hdr->R=0;
 					fu_hdr->S=0;
 					fu_hdr->TYPE=n->nal_unit_type;
 					fu_hdr->E=1;
-					nalu_payload=&sendbuf[2];//同理将(char*)sendbuf[14]赋给nalu_payload
-					memcpy(nalu_payload,n->buf+t*MAX_RTP_PKT_LENGTH+1,l-1);//将nalu最后剩余的l-1(去掉了一个字节的NALU头)字节内容写入(char*)sendbuf[14]开始的字符串。
+					
+					nalu_payload=&sendbuf[2];
+					memcpy(nalu_payload,n->buf+t*MAX_RTP_PKT_LENGTH+1,l-1);
 
 					//status = session.SendPacket((void *)(char*)sendbuf,l+1);
 					//status = session.SendPacket((void *)(char*)sendbuf,l+1,96,true,3600);
@@ -367,22 +362,19 @@ int main(int argc, char *argv[])
 					//printf("dddd2");
 					memset((char*)sendbuf,0,1500);
 					//session.SetDefaultMark(false);
-					//设置FU INDICATOR,并将这个HEADER填入(char*)sendbuf[12]
-					fu_ind =(FU_INDICATOR*)&sendbuf[0]; //将(char*)sendbuf[12]的地址赋给fu_ind，之后对fu_ind的写入就将写入(char*)sendbuf中；
+					fu_ind =(FU_INDICATOR*)&sendbuf[0]; 
 					fu_ind->F=n->forbidden_bit;
 					fu_ind->NRI=n->nal_reference_idc>>5;
 					fu_ind->TYPE=28;
 
-					//设置FU HEADER,并将这个HEADER填入(char*)sendbuf[13]
 					fu_hdr =(FU_HEADER*)&sendbuf[1];
-					//fu_hdr->E=0;
 					fu_hdr->R=0;
 					fu_hdr->S=0;
 					fu_hdr->E=0;
 					fu_hdr->TYPE=n->nal_unit_type;
 
-					nalu_payload=&sendbuf[2];//同理将(char*)sendbuf[14]的地址赋给nalu_payload
-					memcpy(nalu_payload,n->buf+t*MAX_RTP_PKT_LENGTH+1,MAX_RTP_PKT_LENGTH);//去掉起始前缀的nalu剩余内容写入(char*)sendbuf[14]开始的字符串。
+					nalu_payload=&sendbuf[2];
+					memcpy(nalu_payload,n->buf+t*MAX_RTP_PKT_LENGTH+1,MAX_RTP_PKT_LENGTH);
 
 					//status = session.SendPacket((void *)(char*)sendbuf,MAX_RTP_PKT_LENGTH+2);
 					//status = session.SendPacket((void *)(char*)sendbuf,MAX_RTP_PKT_LENGTH+2,96,false,0);
@@ -441,12 +433,11 @@ int main(int argc, char *argv[])
 
 	printf("over\n");
 
+	nalu_free(n);
 	fclose(bits);
 	rtp_session_destroy(session);
-	ortp_exit();
 	ortp_global_stats_display();
-
-	nalu_free(n);
+	ortp_exit();
 
 	return 0;
 }
