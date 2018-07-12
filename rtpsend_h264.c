@@ -229,7 +229,7 @@ int main(int argc, char *argv[])
 	
 
 	bool start=false;
-	while(!feof(bits))
+	while(!feof(bits) && (runcond))
 	{
 		//< get current nalu and scroll file offset to next h264 startcode
 		int size=get_next_nalu(bits, n);
